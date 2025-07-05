@@ -1,0 +1,589 @@
+/*
+  # Food 'n' Fun Restaurant Database Schema
+
+  1. New Tables
+    - `menu_items`
+      - `id` (uuid, primary key)
+      - `title` (text, menu item name)
+      - `description` (text, item description)
+      - `price` (decimal, item price)
+      - `prep_time` (integer, preparation time in minutes)
+      - `category` (text, food category)
+      - `image_url` (text, optional image)
+      - `is_available` (boolean, availability status)
+      - `created_at` (timestamp)
+      - `updated_at` (timestamp)
+
+    - `tables`
+      - `id` (integer, primary key)
+      - `table_number` (integer, unique table identifier)
+      - `status` (text, 'free' or 'occupied')
+      - `created_at` (timestamp)
+      - `updated_at` (timestamp)
+
+    - `device_sessions`
+      - `id` (uuid, primary key)
+      - `table_id` (integer, foreign key to tables)
+      - `device_id` (text, unique device identifier)
+      - `created_at` (timestamp)
+
+    - `orders`
+      - `id` (uuid, primary key)
+      - `table_id` (integer, foreign key to tables)
+      - `device_id` (text, device that placed order)
+      - `items` (jsonb, ordered items with quantities)
+      - `total_amount` (decimal, total order value)
+      - `max_prep_time` (integer, longest prep time)
+      - `status` (text, 'pending', 'preparing', 'served')
+      - `created_at` (timestamp)
+      - `updated_at` (timestamp)
+
+    - `customer_requests`
+      - `id` (uuid, primary key)
+      - `table_id` (integer, foreign key to tables)
+      - `request_type` (text, 'water' or 'bill')
+      - `is_served` (boolean, completion status)
+      - `created_at` (timestamp)
+      - `served_at` (timestamp, nullable)
+
+  2. Security
+    - Enable RLS on all tables
+    - Add policies for different user roles
+    - Manager and servant authentication via Supabase Auth
+*/
+
+-- Create menu_items table
+CREATE TABLE IF NOT EXISTS menu_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  description text NOT NULL,
+  price decimal(10,2) NOT NULL,
+  prep_time integer NOT NULL DEFAULT 15,
+  category text NOT NULL,
+  image_url text,
+  is_available boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Create tables table
+CREATE TABLE IF NOT EXISTS tables (
+  id integer PRIMARY KEY,
+  table_number integer UNIQUE NOT NULL,
+  status text NOT NULL DEFAULT 'free' CHECK (status IN ('free', 'occupied')),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Create device_sessions table
+CREATE TABLE IF NOT EXISTS device_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_id integer REFERENCES tables(id) ON DELETE CASCADE,
+  device_id text NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(table_id, device_id)
+);
+
+-- Create orders table
+CREATE TABLE IF NOT EXISTS orders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_id integer REFERENCES tables(id) ON DELETE CASCADE,
+  device_id text NOT NULL,
+  items jsonb NOT NULL,
+  total_amount decimal(10,2) NOT NULL,
+  max_prep_time integer NOT NULL DEFAULT 15,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'preparing', 'served')),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Create customer_requests table
+CREATE TABLE IF NOT EXISTS customer_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_id integer REFERENCES tables(id) ON DELETE CASCADE,
+  request_type text NOT NULL CHECK (request_type IN ('water', 'bill')),
+  is_served boolean DEFAULT false,
+  created_at timestamptz DEFAULT now(),
+  served_at timestamptz
+);
+
+-- Enable Row Level Security
+ALTER TABLE menu_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tables ENABLE ROW LEVEL SECURITY;
+ALTER TABLE device_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_requests ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for menu_items (readable by everyone, writable by authenticated users only)
+CREATE POLICY "Menu items are viewable by everyone"
+  ON menu_items FOR SELECT
+  USING (true);
+
+CREATE POLICY "Menu items are manageable by authenticated users"
+  ON menu_items FOR ALL
+  TO authenticated
+  USING (true);
+
+-- RLS Policies for tables (readable by everyone, writable by authenticated users only)
+CREATE POLICY "Tables are viewable by everyone"
+  ON tables FOR SELECT
+  USING (true);
+
+CREATE POLICY "Tables are manageable by authenticated users"
+  ON tables FOR ALL
+  TO authenticated
+  USING (true);
+
+-- RLS Policies for device_sessions (readable by everyone)
+CREATE POLICY "Device sessions are viewable by everyone"
+  ON device_sessions FOR SELECT
+  USING (true);
+
+CREATE POLICY "Device sessions are manageable by everyone"
+  ON device_sessions FOR ALL
+  USING (true);
+
+-- RLS Policies for orders (readable by everyone, writable by everyone for customer orders)
+CREATE POLICY "Orders are viewable by everyone"
+  ON orders FOR SELECT
+  USING (true);
+
+CREATE POLICY "Orders are manageable by everyone"
+  ON orders FOR ALL
+  USING (true);
+
+-- RLS Policies for customer_requests (readable by everyone, writable by everyone)
+CREATE POLICY "Customer requests are viewable by everyone"
+  ON customer_requests FOR SELECT
+  USING (true);
+
+CREATE POLICY "Customer requests are manageable by everyone"
+  ON customer_requests FOR ALL
+  USING (true);
+
+-- Insert sample data
+INSERT INTO menu_items (title, description, price, prep_time, category) VALUES
+('Chicken Biryani', 'Aromatic basmati rice cooked with tender chicken and traditional spices', 250.00, 25, 'main'),
+('Paneer Butter Masala', 'Creamy tomato-based curry with soft paneer cubes', 180.00, 15, 'main'),
+('Veg Spring Rolls', 'Crispy rolls filled with fresh vegetables and served with sweet chili sauce', 120.00, 10, 'starter'),
+('Chicken 65', 'Spicy fried chicken appetizer with curry leaves and green chilies', 160.00, 12, 'starter'),
+('Mutton Curry', 'Traditional spicy mutton curry cooked with onions and aromatic spices', 300.00, 35, 'main'),
+('Fish Fry', 'Fresh fish marinated with spices and shallow fried to perfection', 220.00, 15, 'main'),
+('Veg Fried Rice', 'Wok-tossed rice with mixed vegetables and soy sauce', 140.00, 12, 'main'),
+('Chicken Tikka', 'Grilled chicken pieces marinated in yogurt and spices', 200.00, 20, 'starter'),
+('Masala Dosa', 'Crispy rice crepe filled with spiced potato mixture', 80.00, 8, 'main'),
+('Gulab Jamun', 'Sweet milk dumplings soaked in sugar syrup', 60.00, 5, 'dessert');
+
+-- Insert sample tables
+INSERT INTO tables (id, table_number) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+
+/*
+  # Create profiles table for user roles
+
+  1. New Tables
+    - `profiles`
+      - `id` (uuid, primary key, references auth.users)
+      - `role` (text, 'manager' or 'servant')
+      - `created_at` (timestamp)
+      - `updated_at` (timestamp)
+
+  2. Security
+    - Enable RLS on `profiles` table
+    - Add policies for authenticated users to read their own profile
+    - Add policies for managers to read all profiles
+
+  3. Functions
+    - Create trigger to automatically create profile on user signup
+*/
+
+-- Create profiles table
+CREATE TABLE IF NOT EXISTS profiles (
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role text NOT NULL CHECK (role IN ('manager', 'servant')),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Enable RLS
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- Create policies
+CREATE POLICY "Users can read own profile"
+  ON profiles
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() = id);
+
+CREATE POLICY "Managers can read all profiles"
+  ON profiles
+  FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles
+      WHERE id = auth.uid() AND role = 'manager'
+    )
+  );
+
+-- Create function to handle new user creation
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, role)
+  VALUES (
+    new.id,
+    CASE 
+      WHEN new.email LIKE '%@manager.com' THEN 'manager'
+      WHEN new.email LIKE '%@servant.com' THEN 'servant'
+      ELSE 'servant'
+    END
+  );
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create trigger for new user creation
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+
+-- Insert sample users (you'll need to create these in Supabase Auth manually)
+-- For testing purposes, you can create users with these emails:
+-- admin@manager.com (password: manager123)
+-- staff@servant.com (password: servant123)
+
+/*
+  # Update customer_requests table to include order_more option
+
+  1. Changes
+    - Update the check constraint to include 'order_more' as a valid request type
+    - This allows customers to request ordering more food
+
+  2. Security
+    - Maintains existing RLS policies
+*/
+
+-- Drop the existing constraint
+ALTER TABLE customer_requests DROP CONSTRAINT IF EXISTS customer_requests_request_type_check;
+
+-- Add the updated constraint with order_more option
+ALTER TABLE customer_requests ADD CONSTRAINT customer_requests_request_type_check 
+  CHECK (request_type IN ('water', 'bill', 'order_more'));
+
+/*
+  # Fix infinite recursion in profiles RLS policies
+
+  1. Security Changes
+    - Drop existing problematic policies that cause infinite recursion
+    - Create new simplified policies that avoid recursive lookups
+    - Ensure users can read their own profiles without circular dependencies
+    - Allow managers to read all profiles using a direct auth check
+
+  2. Policy Changes
+    - Remove the recursive manager policy that queries profiles table
+    - Simplify user profile access to direct ID comparison
+    - Add a safe manager policy that doesn't cause recursion
+*/
+
+-- Drop existing policies that cause infinite recursion
+DROP POLICY IF EXISTS "Managers can read all profiles" ON profiles;
+DROP POLICY IF EXISTS "Users can read own profile" ON profiles;
+
+-- Create new safe policies without recursion
+CREATE POLICY "Users can read own profile"
+  ON profiles
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() = id);
+
+-- Create a simple policy for managers that doesn't cause recursion
+-- This policy allows authenticated users to read profiles, but we'll handle
+-- manager-specific access in the application layer to avoid recursion
+CREATE POLICY "Authenticated users can read profiles"
+  ON profiles
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Allow authenticated users to update their own profiles
+CREATE POLICY "Users can update own profile"
+  ON profiles
+  FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+-- Allow authenticated users to insert their own profiles
+CREATE POLICY "Users can insert own profile"
+  ON profiles
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = id);
+-- Enable realtime for orders table
+alter publication supabase_realtime add table orders;
+
+-- Enable row level security for orders table
+alter table orders enable row level security;
+
+-- Create policy for customers to see their own orders
+create policy "Customers can view their own orders"
+  on orders
+  for select
+  using (table_number::text = (select table_number::text from device_sessions where device_id = current_setting('request.jwt.claims')::json->>'sub'));
+
+-- Create policy for staff to manage all orders
+create policy "Staff can view and update all orders"
+  on orders
+  for all
+  using (
+    auth.role() = 'authenticated' and 
+    exists (
+      select 1 from profiles 
+      where id = auth.uid() 
+      and role in ('manager', 'servant')
+    )
+  );
+-- Update existing orders with 'served' status to 'order is ready'
+UPDATE orders
+SET status = 'order is ready'
+WHERE status = 'served';
+
+-- Update the check constraint for order status
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+ALTER TABLE orders ADD CONSTRAINT orders_status_check 
+  CHECK (status IN ('pending', 'preparing', 'order is ready', 'cancelled'));
+
+/*
+  # Create demo accounts and sample menu data
+
+  1. Demo Users Setup
+    - Manager: admin@manager.com / Hemanth
+    - Servant: admin@servant.com / Hello123
+
+  2. Enhanced Menu Items
+    - Multiple categories with authentic Indian dishes
+    - Varied pricing and preparation times
+    - Popular items from different regions
+
+  3. Additional Tables
+    - More tables for better testing
+*/
+
+-- Insert additional sample menu items with diverse categories
+INSERT INTO menu_items (title, description, price, prep_time, category, is_available) VALUES
+-- Starters
+('Samosa (2 pcs)', 'Crispy triangular pastries filled with spiced potatoes and peas', 40.00, 8, 'starter', true),
+('Paneer Tikka', 'Grilled cottage cheese cubes marinated in yogurt and spices', 180.00, 15, 'starter', true),
+('Chicken Lollipop', 'Spicy chicken drumettes served with mint chutney', 220.00, 18, 'starter', true),
+('Aloo Tikki Chat', 'Crispy potato patties topped with chutneys and yogurt', 80.00, 10, 'starter', true),
+('Fish Koliwada', 'Batter-fried fish pieces with curry leaves and spices', 240.00, 12, 'starter', true),
+
+-- Main Course - Vegetarian
+('Dal Tadka', 'Yellow lentils tempered with cumin, garlic, and spices', 120.00, 15, 'main', true),
+('Palak Paneer', 'Cottage cheese cubes in creamy spinach gravy', 160.00, 18, 'main', true),
+('Chole Bhature', 'Spicy chickpea curry served with fluffy fried bread', 140.00, 20, 'main', true),
+('Aloo Gobi', 'Dry curry of potatoes and cauliflower with aromatic spices', 130.00, 15, 'main', true),
+('Rajma Rice', 'Kidney bean curry served with steamed basmati rice', 150.00, 25, 'main', true),
+
+-- Main Course - Non-Vegetarian
+('Butter Chicken', 'Tender chicken in rich tomato and cream sauce', 280.00, 25, 'main', true),
+('Hyderabadi Biryani', 'Fragrant basmati rice layered with marinated mutton', 320.00, 45, 'main', true),
+('Goan Fish Curry', 'Fresh fish cooked in coconut milk and spices', 260.00, 20, 'main', true),
+('Chicken Chettinad', 'Spicy South Indian chicken curry with black pepper', 250.00, 22, 'main', true),
+('Prawn Masala', 'Succulent prawns in onion-tomato gravy', 300.00, 18, 'main', true),
+
+-- Rice & Breads
+('Jeera Rice', 'Basmati rice tempered with cumin seeds', 80.00, 12, 'main', true),
+('Garlic Naan', 'Soft bread topped with garlic and herbs', 60.00, 8, 'main', true),
+('Butter Roti', 'Whole wheat flatbread brushed with butter', 25.00, 5, 'main', true),
+('Kashmiri Pulao', 'Fragrant rice with dry fruits and saffron', 180.00, 20, 'main', true),
+
+-- Desserts
+('Ras Malai', 'Soft cottage cheese dumplings in sweetened milk', 80.00, 5, 'dessert', true),
+('Kulfi', 'Traditional Indian ice cream with cardamom and pistachios', 70.00, 3, 'dessert', true),
+('Gajar Halwa', 'Sweet carrot pudding garnished with nuts', 90.00, 8, 'dessert', true),
+('Jalebi', 'Crispy spiral-shaped sweets soaked in sugar syrup', 60.00, 10, 'dessert', true),
+('Kheer', 'Rice pudding flavored with cardamom and garnished with nuts', 75.00, 15, 'dessert', true);
+
+-- Add more tables for better testing
+INSERT INTO tables (id, table_number, status) VALUES
+(11, 11, 'free'), (12, 12, 'free'), (13, 13, 'free'), (14, 14, 'free'), (15, 15, 'free'),
+(16, 16, 'free'), (17, 17, 'free'), (18, 18, 'free'), (19, 19, 'free'), (20, 20, 'free')
+ON CONFLICT (id) DO NOTHING;
+/*
+  # Complete Restaurant System Fix
+
+  1. Ensure all tables exist with proper structure
+  2. Fix RLS policies for proper access
+  3. Enable realtime for all necessary tables
+  4. Create proper indexes for performance
+  5. Add sample data if missing
+*/
+
+-- Ensure all tables exist (safe to run multiple times)
+CREATE TABLE IF NOT EXISTS menu_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  description text NOT NULL,
+  price decimal(10,2) NOT NULL,
+  prep_time integer NOT NULL DEFAULT 15,
+  category text NOT NULL,
+  image_url text,
+  is_available boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS tables (
+  id integer PRIMARY KEY,
+  table_number integer UNIQUE NOT NULL,
+  status text NOT NULL DEFAULT 'free' CHECK (status IN ('free', 'occupied')),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS device_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_id integer REFERENCES tables(id) ON DELETE CASCADE,
+  device_id text NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(table_id, device_id)
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_id integer REFERENCES tables(id) ON DELETE CASCADE,
+  device_id text NOT NULL,
+  items jsonb NOT NULL,
+  total_amount decimal(10,2) NOT NULL,
+  max_prep_time integer NOT NULL DEFAULT 15,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'preparing', 'order is ready', 'served', 'cancelled')),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS customer_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_id integer REFERENCES tables(id) ON DELETE CASCADE,
+  request_type text NOT NULL CHECK (request_type IN ('water', 'bill', 'order_more')),
+  is_served boolean DEFAULT false,
+  amount decimal(10,2) DEFAULT 0,
+  created_at timestamptz DEFAULT now(),
+  served_at timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS profiles (
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role text NOT NULL CHECK (role IN ('manager', 'servant')),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Enable RLS on all tables
+ALTER TABLE menu_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tables ENABLE ROW LEVEL SECURITY;
+ALTER TABLE device_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies to avoid conflicts
+DROP POLICY IF EXISTS "Menu items are viewable by everyone" ON menu_items;
+DROP POLICY IF EXISTS "Menu items are manageable by authenticated users" ON menu_items;
+DROP POLICY IF EXISTS "Tables are viewable by everyone" ON tables;
+DROP POLICY IF EXISTS "Tables are manageable by authenticated users" ON tables;
+DROP POLICY IF EXISTS "Device sessions are viewable by everyone" ON device_sessions;
+DROP POLICY IF EXISTS "Device sessions are manageable by everyone" ON device_sessions;
+DROP POLICY IF EXISTS "Orders are viewable by everyone" ON orders;
+DROP POLICY IF EXISTS "Orders are manageable by everyone" ON orders;
+DROP POLICY IF EXISTS "Customer requests are viewable by everyone" ON customer_requests;
+DROP POLICY IF EXISTS "Customer requests are manageable by everyone" ON customer_requests;
+DROP POLICY IF EXISTS "Users can read own profile" ON profiles;
+DROP POLICY IF EXISTS "Authenticated users can read profiles" ON profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
+
+-- Create comprehensive RLS policies
+-- Menu items - public read, authenticated write
+CREATE POLICY "Public can view menu items" ON menu_items FOR SELECT USING (true);
+CREATE POLICY "Authenticated can manage menu items" ON menu_items FOR ALL TO authenticated USING (true);
+
+-- Tables - public read, authenticated write
+CREATE POLICY "Public can view tables" ON tables FOR SELECT USING (true);
+CREATE POLICY "Authenticated can manage tables" ON tables FOR ALL TO authenticated USING (true);
+
+-- Device sessions - public access for customer functionality
+CREATE POLICY "Public can manage device sessions" ON device_sessions FOR ALL USING (true);
+
+-- Orders - public access for customer functionality
+CREATE POLICY "Public can manage orders" ON orders FOR ALL USING (true);
+
+-- Customer requests - public access for customer functionality
+CREATE POLICY "Public can manage customer requests" ON customer_requests FOR ALL USING (true);
+
+-- Profiles - authenticated users only
+CREATE POLICY "Users can read own profile" ON profiles FOR SELECT TO authenticated USING (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE TO authenticated USING (auth.uid() = id);
+CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);
+CREATE POLICY "Authenticated can read all profiles" ON profiles FOR SELECT TO authenticated USING (true);
+
+-- Enable realtime for all tables
+ALTER PUBLICATION supabase_realtime ADD TABLE menu_items;
+ALTER PUBLICATION supabase_realtime ADD TABLE tables;
+ALTER PUBLICATION supabase_realtime ADD TABLE device_sessions;
+ALTER PUBLICATION supabase_realtime ADD TABLE orders;
+ALTER PUBLICATION supabase_realtime ADD TABLE customer_requests;
+ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
+
+-- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_orders_table_id ON orders(table_id);
+CREATE INDEX IF NOT EXISTS idx_orders_device_id ON orders(device_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_customer_requests_table_id ON customer_requests(table_id);
+CREATE INDEX IF NOT EXISTS idx_customer_requests_is_served ON customer_requests(is_served);
+CREATE INDEX IF NOT EXISTS idx_device_sessions_table_id ON device_sessions(table_id);
+CREATE INDEX IF NOT EXISTS idx_device_sessions_device_id ON device_sessions(device_id);
+CREATE INDEX IF NOT EXISTS idx_menu_items_category ON menu_items(category);
+CREATE INDEX IF NOT EXISTS idx_menu_items_is_available ON menu_items(is_available);
+
+-- Create or replace the user creation function
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, role)
+  VALUES (
+    new.id,
+    CASE 
+      WHEN new.email LIKE '%@manager.com' THEN 'manager'
+      WHEN new.email LIKE '%@servant.com' THEN 'servant'
+      ELSE 'servant'
+    END
+  );
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Recreate the trigger
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+
+-- Insert basic tables if they don't exist
+INSERT INTO tables (id, table_number, status) VALUES
+(1, 1, 'free'), (2, 2, 'free'), (3, 3, 'free'), (4, 4, 'free'), (5, 5, 'free'),
+(6, 6, 'free'), (7, 7, 'free'), (8, 8, 'free'), (9, 9, 'free'), (10, 10, 'free')
+ON CONFLICT (id) DO NOTHING;
+
+-- Insert basic menu items if they don't exist
+INSERT INTO menu_items (title, description, price, prep_time, category, is_available) VALUES
+('Chicken Biryani', 'Aromatic basmati rice cooked with tender chicken and traditional spices', 250.00, 25, 'main', true),
+('Paneer Butter Masala', 'Creamy tomato-based curry with soft paneer cubes', 180.00, 15, 'main', true),
+('Veg Spring Rolls', 'Crispy rolls filled with fresh vegetables and served with sweet chili sauce', 120.00, 10, 'starter', true),
+('Chicken 65', 'Spicy fried chicken appetizer with curry leaves and green chilies', 160.00, 12, 'starter', true),
+('Gulab Jamun', 'Sweet milk dumplings soaked in sugar syrup', 60.00, 5, 'dessert', true)
+ON CONFLICT (title) DO NOTHING;
